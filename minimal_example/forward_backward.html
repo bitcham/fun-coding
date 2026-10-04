@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>순전파와 역전파 — autograd 없이 numpy와 C로 직접 미분</title>
+
+<!-- KaTeX -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {
+    delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '$',  right: '$',  display: false},
+      {left: '\\[', right: '\\]', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ],
+    ignoredTags: ['script','noscript','style','textarea','pre','code']
+  });"></script>
+
+<!-- highlight.js -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.highlightAll());</script>
+
+<style>
+  html, body {
+    font-family: 'Pretendard', 'Segoe UI', system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+    line-height: 1.65; color: #d4d8df; background: #16181d; margin: 0; padding: 0;
+  }
+  body { max-width: 860px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1 { font-size: 28px; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 2px solid #4a5060; color: #f0f2f5; }
+  h2 { font-size: 22px; margin-top: 56px; padding-top: 24px; border-top: 1px solid #2e323a; color: #e6e9ee; }
+  h3 { font-size: 17px; margin-top: 32px; color: #e6e9ee; }
+  p, li { font-size: 15px; }
+  a { color: #6fa8dc; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  hr { border: 0; border-top: 1px solid #2e323a; margin: 36px 0; }
+
+  p code, li code, td code, th code {
+    background: #262a31; padding: 1px 6px; border-radius: 3px;
+    font-family: Consolas, 'Courier New', Menlo, monospace; font-size: 0.92em; color: #d8b87a;
+  }
+  pre { margin: 14px 0; border-radius: 6px; overflow-x: auto; background: #2b313b; border: 1px solid #434b59; }
+  pre code, pre code.hljs { background: transparent !important; }
+  pre code {
+    font-family: Consolas, 'Courier New', Menlo, monospace; font-size: 13px;
+    padding: 14px 16px; display: block; line-height: 1.55;
+  }
+  table { border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { border: 1px solid #2e323a; padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: #21242a; font-weight: 600; }
+  blockquote { background: #1d2025; margin: 14px 0; padding: 8px 16px; color: #aeb3bb; border-radius: 4px; }
+  .katex-display { margin: 14px 0 !important; }
+
+  .note { background: #1d2025; border: 1px solid #2e323a; padding: 10px 16px; border-radius: 4px; margin: 14px 0; }
+
+  /* diagram */
+  .diagram-wrap { display: flex; justify-content: center; margin: 22px 0; }
+  .diagram { display: inline-flex; flex-direction: column; align-items: stretch; min-width: 440px; }
+  .box { padding: 10px 22px; border: 2px solid #4a5060; background: #2a2d33; border-radius: 8px; text-align: center; }
+  .box.dashed { border-style: dashed; border-color: #555; background: #252525; }
+  .box .title { font-weight: 700; font-size: 15px; color: #d8dce4; }
+  .box .meta { font-size: 11px; color: #8a92a0; margin-top: 4px; }
+  .box.dashed .title { color: #aaa; font-weight: 600; font-size: 14px; }
+  .arrow { display: flex; flex-direction: column; align-items: center; padding: 5px 0; }
+  .arrow-label { font-size: 12px; color: #8a92a0; }
+  .arrow-mark { font-size: 20px; color: #999; line-height: 1; }
+  .transition { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 8px 0; }
+  .branches { display: flex; flex-direction: column; gap: 4px; }
+  .branch-param { padding: 4px 12px; background: #33301e; border-radius: 3px; font-size: 12.5px; color: #c8b878; }
+  .branch-next { padding: 4px 12px; background: #2a2d33; border-radius: 3px; font-size: 12.5px; color: #d8dce4; }
+  .box .title .katex, .box .title .katex * { color: inherit !important; }
+  .box .meta .katex, .box .meta .katex * { color: inherit !important; }
+  .arrow-label .katex, .arrow-label .katex * { color: inherit !important; }
+  .branch-param .katex, .branch-param .katex * { color: inherit !important; }
+  .branch-next .katex, .branch-next .katex * { color: inherit !important; }
+
+  .toc { background: #1d2025; border: 1px solid #2e323a; border-radius: 6px; padding: 14px 24px; margin: 24px 0; font-size: 14px; }
+  .toc ol { margin: 4px 0; padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<h1>순전파와 역전파 — autograd 없이 직접 미분</h1>
+
+<ul>
+<li><b>PyTorch 같은 자동 미분(autograd) 엔진을 쓰지 않는다.</b></li>
+<li>순전파부터 역전파까지 모든 식을 손으로 미분해 <a href="python/nlm.py">python/nlm.py</a>는 numpy로, <a href="c/nlm.c">c/nlm.c</a>는 순수 C로 그대로 옮긴다.</li>
+<li>그래서 프레임워크가 대신 해주던 일이 코드에 전부 드러난다.</li>
+<li>numpy 구현과 C 구현은 단계 번호(① ~ ⑫)가 1:1로 대응한다.</li>
+</ul>
+
+
+<nav class="toc">
+  <b>목차</b>
+  <ol>
+    <li><a href="#model">모델 구조와 기호</a></li>
+    <li><a href="#forward">순전파 (Forward) — 6단계</a></li>
+    <li><a href="#loss">손실 — Cross Entropy</a></li>
+    <li><a href="#backward">역전파 (Backward) — 손으로 미분</a></li>
+    <li><a href="#gradcheck">gradcheck — 손미분이 맞는지 검증</a></li>
+    <li><a href="#table">수식 ↔ 코드 대응표</a></li>
+    <li><a href="#patterns">연산 패턴 요약 — 네 가지</a></li>
+    <li><a href="#loop">학습 루프</a></li>
+  </ol>
+</nav>
+
+<hr>
+
+<h2 id="model">1. 모델 구조와 기호</h2>
+
+<p>두 단어 $w_1, w_2$를 받아 다음 단어의 확률 분포를 출력한다 (Bengio 2003 NPLM에서 직접 연결을 제외해 단순화한 형태).</p>
+
+$$
+P(w_3 \mid w_1, w_2) = \mathrm{softmax}\bigl(\, W_2^\top \tanh(W_1^\top [E_{w_1} ; E_{w_2}] + \mathbf{b}_1) + \mathbf{b}_2 \,\bigr)
+$$
+
+<p>[참고] 원논문 Bengio 2003에는 입력 임베딩에서 출력층으로 바로 가는 <b>직접 연결</b>(direct connection) 항이 하나 더 있다 (아래 밑줄 부분은 원 논문에서도 선택적으로 사용):</p>
+
+$$
+P(w_3 \mid w_1, w_2) = \mathrm{softmax}\bigl(\, \underbrace{W_d\,[E_{w_1} ; E_{w_2}]}_{\text{직접 연결 — 이 데모는 생략}} + W_2^\top \tanh(W_1^\top [E_{w_1} ; E_{w_2}] + \mathbf{b}_1) + \mathbf{b}_2 \,\bigr)
+$$
+
+<table>
+<thead><tr><th>기호</th><th>의미</th><th>모양</th><th>값 (이 데모)</th></tr></thead>
+<tbody>
+<tr><td>$V$</td><td>vocab size</td><td>—</td><td>11</td></tr>
+<tr><td>$D$</td><td>임베딩 차원</td><td>—</td><td>2</td></tr>
+<tr><td>$H$</td><td>은닉 차원</td><td>—</td><td>8 <span style="color:#888">(<code>-DHIDDEN=6</code>으로 6도 빌드)</span></td></tr>
+<tr><td>$n$</td><td>컨텍스트 길이</td><td>—</td><td>2</td></tr>
+<tr><td>$B$</td><td>배치 = 학습 쌍 전체</td><td>—</td><td>24 (full-batch)</td></tr>
+<tr><td>$E$</td><td>임베딩 테이블</td><td>$[V, D]$</td><td>$[11, 2]$</td></tr>
+<tr><td>$W_1$</td><td>은닉 가중치</td><td>$[nD, H]$</td><td>$[4, 8]$</td></tr>
+<tr><td>$\mathbf{b}_1$</td><td>은닉 bias</td><td>$[H]$</td><td>$[8]$</td></tr>
+<tr><td>$W_2$</td><td>출력 가중치</td><td>$[H, V]$</td><td>$[8, 11]$</td></tr>
+<tr><td>$\mathbf{b}_2$</td><td>출력 bias</td><td>$[V]$</td><td>$[11]$</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li><b>총 파라미터: $11{\cdot}2 + 4{\cdot}8 + 8 + 8{\cdot}11 + 11 = 161$</b> ($H=8$ 기준; $H=6$이면 $129$)</li>
+<li>이 숫자들이 6개의 한국어 문장을 외우고 일반화한다 (실험 결과는 <a href="report.md">report.md</a>)</li>
+</ul>
+
+<p>numpy에서는 가중치를 다섯 개의 배열로 직접 선언한다 (<a href="python/nlm.py">nlm.py</a>):</p>
+
+<pre><code class="language-python">self.E  = rng.normal(0, 0.5, (V, D))                  # 임베딩 테이블
+self.W1 = rng.normal(0, sqrt(2/(C*D+H)), (C*D, H))    # 은닉 (Xavier-ish)
+self.b1 = np.zeros(H)
+self.W2 = rng.normal(0, sqrt(2/(H+V)), (H, V))        # 출력
+self.b2 = np.zeros(V)</code></pre>
+
+<p>C에서는 같은 다섯 배열을 구조체 하나에 모은다 (<a href="c/nlm.h">nlm.h</a>). 크기가 컴파일 상수라 다차원 배열을 그대로 쓴다:</p>
+
+<pre><code class="language-c">typedef struct {
+    double E[VOCAB_SIZE][EMB_DIM];   // [V, D]
+    double W1[FLAT_DIM][HIDDEN];     // [n*D, H]
+    double b1[HIDDEN];
+    double W2[HIDDEN][VOCAB_SIZE];   // [H, V]
+    double b2[VOCAB_SIZE];
+} nlm_t;</code></pre>
+
+<p>C는 <code>double</code>을 쓴다 — 손으로 짠 미분을 수치 미분과 대조(<a href="#gradcheck">gradcheck</a>)할 때 정밀도 여유가 있다.</p>
+
+<hr>
+
+<h2 id="forward">2. 순전파 (Forward) — 6단계</h2>
+
+<ul>
+<li>전체 식을 여섯 단계로 쪼갠다.</li>
+<li>각 단계에서 numpy 한 줄과 C 이중 for 루프는 같은 수식을 계산한다.</li>
+</ul>
+
+<h3>① 임베딩 lookup + ② flatten</h3>
+
+$$ \mathbf{flat} = [\, E_{w_1} \; ; \; E_{w_2} \,] \in \mathbb{R}^{nD} $$
+
+<ul>
+<li>$E_{w_i}$는 임베딩 테이블의 $w_i$번째 <b>행</b>(길이 $D$)</li>
+<li>두 행을 이어 붙여 길이 $nD = 4$인 벡터로 만든다</li>
+<li>numpy의 <code>E[X]</code>는 <a href="https://numpy.org/doc/stable/user/basics.indexing.html#advanced-indexing">fancy indexing</a> — 정수 배열로 여러 행을 한 번에 조회</li>
+</ul>
+
+<pre><code class="language-python"># numpy
+e    = self.E[X]              # [B, C, D]  — fancy indexing으로 한 번에 lookup
+flat = e.reshape(B, C * D)    # [B, C*D]   — 펼치면 그게 concat</code></pre>
+
+<pre><code class="language-c">/* C — ctx[c]번째 행을 flat의 c*D..(c+1)*D 위치로 복사 */
+for (int b = 0; b < N_PAIRS; b++)
+    for (int c = 0; c < CONTEXT_LEN; c++) {
+        int id = X[b][c];
+        for (int d = 0; d < EMB_DIM; d++)
+            flat[b][c * EMB_DIM + d] = m->E[id][d];
+    }</code></pre>
+
+<h3>③ 은닉층 (Linear + tanh)</h3>
+
+$$ \mathbf{s} = W_1^\top \mathbf{flat} + \mathbf{b}_1, \qquad \mathbf{h} = \tanh(\mathbf{s}) \in \mathbb{R}^{H} $$
+
+<pre><code class="language-python"># numpy
+h = np.tanh(flat @ self.W1 + self.b1)   # [B, H]</code></pre>
+
+<pre><code class="language-c">/* C */
+for (int b = 0; b < N_PAIRS; b++)
+    for (int j = 0; j < HIDDEN; j++) {
+        double s = m->b1[j];
+        for (int i = 0; i < FLAT_DIM; i++) s += flat[b][i] * m->W1[i][j];
+        h[b][j] = tanh(s);
+    }</code></pre>
+
+<h3>④ 출력층 (logits)</h3>
+
+$$ \mathbf{z} = W_2^\top \mathbf{h} + \mathbf{b}_2 \in \mathbb{R}^{V} $$
+
+<pre><code class="language-c">/* C */
+for (int b = 0; b < N_PAIRS; b++)
+    for (int v = 0; v < VOCAB_SIZE; v++) {
+        double s = m->b2[v];
+        for (int j = 0; j < HIDDEN; j++) s += h[b][j] * m->W2[j][v];
+        z[b][v] = s;
+    }</code></pre>
+
+<p><code>z</code>(logits)는 아직 확률이 아니라 단어별 "점수"다 — 음수일 수도, 합이 1도 아니다.</p>
+
+<h3>⑤ Softmax (수치 안정)</h3>
+
+$$ p_v = \frac{\exp(z_v - m)}{\sum_{v'} \exp(z_{v'} - m)}, \qquad m = \max_{v} z_v $$
+
+<p>$m$을 빼면 분자분모 모두 $e^{-m}$이 곱해져 값은 같지만, $z_v$가 클 때 $\exp$가 오버플로우하는 걸 막는다.</p>
+
+<pre><code class="language-python"># numpy
+def softmax(z):
+    z = z - z.max(axis=-1, keepdims=True)
+    e = np.exp(z)
+    return e / e.sum(axis=-1, keepdims=True)</code></pre>
+
+<h3>⑥ Cross-Entropy Loss</h3>
+
+$$ \mathcal{L} = -\frac{1}{B}\sum_{b=1}^{B} \log p_{b,\, y_b} $$
+
+<ul>
+<li>정답 위치 확률이 1에 가까울수록 손실은 0, 0에 가까우면 무한대</li>
+<li><b>$B$로 나눠 평균</b>낸다 — 이 데모는 24개 학습 쌍 전부를 한 배치로 본다(full-batch)</li>
+</ul>
+
+<pre><code class="language-python"># numpy
+correct_p = p[np.arange(B), y]                 # 각 행 정답 위치 확률 [B]
+loss = -np.log(np.maximum(correct_p, 1e-30)).mean()</code></pre>
+
+<h3>차원 흐름</h3>
+
+<div class="diagram-wrap">
+<div class="diagram">
+  <div class="box"><div class="title">$(w_1,\ w_2)$</div><div class="meta">int $[2]$</div></div>
+  <div class="arrow"><span class="arrow-label">lookup + flatten</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$\mathbf{flat}$</div><div class="meta">$[nD] = [4]$</div></div>
+  <div class="arrow"><span class="arrow-label">$W_1^\top\,\mathbf{flat} + \mathbf{b}_1$</span><span class="arrow-mark">↓</span></div>
+  <div class="box dashed"><div class="title">$\mathbf{s}$ <span style="font-size:11px;font-weight:400;">(pre-tanh)</span></div><div class="meta">$[H] = [8]$</div></div>
+  <div class="arrow"><span class="arrow-label">$\tanh$</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$\mathbf{h}$</div><div class="meta">$[H] = [8]$ · backward 재사용</div></div>
+  <div class="arrow"><span class="arrow-label">$W_2^\top\,\mathbf{h} + \mathbf{b}_2$</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$\mathbf{z}$ <span style="font-size:11px;font-weight:400;color:#8a92a0;">(logits)</span></div><div class="meta">$[V] = [11]$</div></div>
+  <div class="arrow"><span class="arrow-label">softmax</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$\mathbf{p}$</div><div class="meta">$[V] = [11]$</div></div>
+</div>
+</div>
+
+<p>역전파는 이 화살표들을 <b>거꾸로</b> 타고 올라간다.</p>
+
+<hr>
+
+<h2 id="loss">3. 손실 — Cross Entropy</h2>
+
+<p>softmax 확률 $p$와 정답 $y$에서 손실은 $\mathcal{L} = -\frac{1}{B}\sum_b \log p_{b,y_b}$. softmax와 cross-entropy는 forward에서 두 단계지만, backward에서는 <b>하나로 합쳐져</b> 간결한 식이 된다(다음 장 ⑦).</p>
+
+<p>numpy/C 모두 $\log 0 = -\infty$를 막으려 확률에 <code>1e-30</code> 하한을 둔다.</p>
+
+<hr>
+
+<h2 id="backward">4. 역전파 (Backward) — 손으로 미분</h2>
+
+<ul>
+<li><b>목표</b>: 각 파라미터 $\theta \in \{E, W_1, \mathbf{b}_1, W_2, \mathbf{b}_2\}$에 대해 $\partial \mathcal{L}/\partial \theta$</li>
+<li><b>원리</b>: 연쇄법칙을 출력 쪽에서 입력 쪽으로. autograd가 없으니 아래 여섯 식을 직접 짜서 그대로 코드로 옮긴다</li>
+</ul>
+
+<h3>⑦ Softmax + CE 합동 미분 (핵심 트릭)</h3>
+
+$$ \boxed{\; \frac{\partial \mathcal{L}}{\partial z_{b,v}} = \frac{1}{B}\bigl(p_{b,v} - \mathbb{1}[v = y_b]\bigr) \;} $$
+
+<ul>
+<li>$\mathbb{1}[v = y_b]$는 <b>지시 함수</b>(indicator function) — 대괄호 안 조건이 맞으면 1, 틀리면 0</li>
+<li>$y_b$ = 정답 단어의 번호, $v$ = 0번부터 $V-1$번까지 훑는 어휘 번호</li>
+<li>$v$가 정답과 같은 <b>한 자리에서만 1</b>, 나머지는 모두 0 → <b>정답 자리만 1로 켠 one-hot 벡터</b></li>
+<li>예: 어휘 11개·정답 3번이면 $[\,0,0,0,1,0,0,0,0,0,0,0\,]$</li>
+</ul>
+
+<p><b>유도.</b> 한 샘플에서 $\mathcal{L}_b = -\log p_{y_b} = -z_{y_b} + \log\sum_{v'}\exp(z_{v'})$.</p>
+<ul>
+<li>첫 항 $-z_{y_b}$를 $z_v$로 미분: $v=y_b$이면 $-1$, 아니면 0 → $-\mathbb{1}[v=y_b]$.</li>
+<li>둘째 항(logsumexp)을 $z_v$로 미분: 정확히 $p_v$ (softmax 정의 그대로).</li>
+</ul>
+<p>합치면 $p_v - \mathbb{1}[v=y_b]$, 평균이라 $1/B$가 붙는다. <b>"확률 분포 − 정답 one-hot"</b>.</p>
+
+<pre><code class="language-python"># numpy — one-hot을 명시적으로 만들지 않고, 정답 칸에서 1만 뺀다
+dz = p.copy()
+dz[np.arange(B), y] -= 1.0
+dz /= B                                  # [B, V]</code></pre>
+
+<pre><code class="language-c">/* C */
+for (int b = 0; b < N_PAIRS; b++) {
+    for (int v = 0; v < VOCAB_SIZE; v++) dz[b][v] = p[b][v] / (double)N_PAIRS;
+    dz[b][y[b]] -= 1.0 / (double)N_PAIRS;
+}</code></pre>
+
+<h3>⑧ 출력층 역전파</h3>
+
+<p>forward: $\mathbf{z} = W_2^\top \mathbf{h} + \mathbf{b}_2$. 연쇄법칙으로 세 가지가 나온다:</p>
+
+$$ \frac{\partial \mathcal{L}}{\partial W_2} = \mathbf{h}^\top\, d\mathbf{z}, \qquad \frac{\partial \mathcal{L}}{\partial \mathbf{b}_2} = \sum_b d\mathbf{z}_b, \qquad \frac{\partial \mathcal{L}}{\partial \mathbf{h}} = d\mathbf{z}\, W_2^\top $$
+
+<pre><code class="language-python"># numpy
+gW2 = h.T @ dz            # [H, V]  가중치 grad = outer/행렬곱
+gb2 = dz.sum(axis=0)      # [V]     bias grad = 그대로 합산
+dh  = dz @ self.W2.T      # [B, H]  입력 grad = 전치곱</code></pre>
+
+<pre><code class="language-c">/* C — gW2[j][v] = Σ_b h[b][j]·dz[b][v] */
+for (int j = 0; j < HIDDEN; j++)
+    for (int v = 0; v < VOCAB_SIZE; v++) {
+        double s = 0.0;
+        for (int b = 0; b < N_PAIRS; b++) s += h[b][j] * dz[b][v];
+        g->W2[j][v] = s;
+    }</code></pre>
+
+<h3>⑨ tanh 역전파</h3>
+
+<p>$\tanh'(s) = 1 - \tanh^2(s) = 1 - h^2$ 이므로:</p>
+
+$$ \frac{\partial \mathcal{L}}{\partial \mathbf{s}} = \frac{\partial \mathcal{L}}{\partial \mathbf{h}} \odot (1 - \mathbf{h}^2) $$
+
+<p><b>관찰</b>: pre-tanh $s$를 따로 저장할 필요가 없다 — 이미 계산한 $h$만으로 $1-h^2$을 구한다.</p>
+
+<pre><code class="language-python"># numpy
+dh_pre = dh * (1.0 - h * h)    # [B, H]</code></pre>
+
+<ul>
+<li><b>참고</b>: $|h|\to 1$(포화)이면 $1-h^2\to 0$이라 gradient가 사라진다 — vanishing gradient</li>
+<li>이 데모는 은닉층 1개라 문제없지만, 깊은 망에서 tanh·sigmoid 대신 ReLU를 쓰게 된 이유다</li>
+</ul>
+
+<h3>⑩ 은닉층 역전파</h3>
+
+<p>forward: $\mathbf{s} = W_1^\top \mathbf{flat} + \mathbf{b}_1$. 출력층과 <b>완전히 같은 패턴</b>:</p>
+
+$$ \frac{\partial \mathcal{L}}{\partial W_1} = \mathbf{flat}^\top\, d\mathbf{s}, \qquad \frac{\partial \mathcal{L}}{\partial \mathbf{b}_1} = \sum_b d\mathbf{s}_b, \qquad \frac{\partial \mathcal{L}}{\partial \mathbf{flat}} = d\mathbf{s}\, W_1^\top $$
+
+<pre><code class="language-python"># numpy
+gW1   = flat.T @ dh_pre       # [C*D, H]
+gb1   = dh_pre.sum(axis=0)    # [H]
+dflat = dh_pre @ self.W1.T    # [B, C*D]</code></pre>
+
+<h3>⑪⑫ 임베딩 역전파 (sparse scatter)</h3>
+
+<p>forward의 lookup은 "flat의 앞 $D$칸 = $E_{w_1}$, 뒤 $D$칸 = $E_{w_2}$"라는 인덱싱이었다. 그 역전파는 <b>반대로 값을 흩뿌리는</b> scatter-add:</p>
+
+$$ \frac{\partial \mathcal{L}}{\partial E_{v}} = \sum_{(b,c)\,:\, X_{b,c} = v} d\mathbf{flat}_{b,\; cD:(c+1)D} $$
+
+<ul>
+<li>즉 <b>컨텍스트에 등장한 행에만</b> gradient가 쌓이고, 나머지 $V-n$개 행은 이 스텝에서 업데이트되지 않는다 — sparse gradient</li>
+<li>수십만 단어 vocab에서도 한 배치가 갱신하는 행은 그 배치에 등장한 토큰뿐이다</li>
+</ul>
+
+<pre><code class="language-python"># numpy — np.add.at 으로 같은 행에 두 번 나와도 누적 보장
+de = dflat.reshape(B, C, D)
+gE = np.zeros_like(self.E)
+np.add.at(gE, X, de)          # gE[X[b,c]] += de[b,c]</code></pre>
+
+<pre><code class="language-c">/* C */
+for (int v = 0; v < VOCAB_SIZE; v++)
+    for (int d = 0; d < EMB_DIM; d++) g->E[v][d] = 0.0;
+for (int b = 0; b < N_PAIRS; b++)
+    for (int c = 0; c < CONTEXT_LEN; c++) {
+        int id = X[b][c];
+        for (int d = 0; d < EMB_DIM; d++)
+            g->E[id][d] += dflat[b][c * EMB_DIM + d];
+    }</code></pre>
+
+<ul>
+<li><b>엣지 케이스</b>: 같은 토큰이 컨텍스트에 두 번 나오면 그 행에 <b>두 번 누적</b>된다 — 올바른 동작(같은 파라미터가 두 경로로 loss에 기여)</li>
+<li><code>+=</code>·<code>np.add.at</code>의 존재 이유다</li>
+</ul>
+
+<h3>역전파 전체 그림</h3>
+
+<div class="diagram-wrap">
+<div class="diagram">
+  <div class="box"><div class="title">$\mathcal{L}$</div><div class="meta">스칼라</div></div>
+  <div class="arrow"><span class="arrow-label">⑦ CE+softmax 합동: $(\mathbf{p}-\text{onehot})/B$</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$d\mathbf{z}$ <code style="font-size:10px;">dz</code></div><div class="meta">$[B, V]$</div></div>
+  <div class="transition"><span class="arrow-mark">↓</span><div class="branches">
+    <div class="branch-param">⑧ $\mathbf{h}^\top d\mathbf{z} \to gW_2$,&nbsp; $\sum d\mathbf{z}\to g\mathbf{b}_2$</div>
+    <div class="branch-next">$d\mathbf{z}\,W_2^\top \to d\mathbf{h}$</div>
+  </div></div>
+  <div class="box"><div class="title">$d\mathbf{h}$</div><div class="meta">$[B, H]$</div></div>
+  <div class="arrow"><span class="arrow-label">⑨ 원소곱 $\odot(1-\mathbf{h}^2)$</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$d\mathbf{s}$ <code style="font-size:10px;">dh_pre</code></div><div class="meta">$[B, H]$</div></div>
+  <div class="transition"><span class="arrow-mark">↓</span><div class="branches">
+    <div class="branch-param">⑩ $\mathbf{flat}^\top d\mathbf{s} \to gW_1$,&nbsp; $\sum d\mathbf{s}\to g\mathbf{b}_1$</div>
+    <div class="branch-next">$d\mathbf{s}\,W_1^\top \to d\mathbf{flat}$</div>
+  </div></div>
+  <div class="box"><div class="title">$d\mathbf{flat}$</div><div class="meta">$[B, nD]$</div></div>
+  <div class="arrow"><span class="arrow-label">⑪⑫ split + scatter-add</span><span class="arrow-mark">↓</span></div>
+  <div class="box"><div class="title">$gE$ — 컨텍스트 행에만 누적</div><div class="meta">$[V, D]$</div></div>
+</div>
+</div>
+
+<hr>
+
+<h2 id="gradcheck">5. gradcheck — 손미분이 맞는지 검증</h2>
+
+<ul>
+<li>autograd가 없으니 <b>손으로 짠 미분이 틀릴 위험</b>이 있다 → numpy 버전은 수치 미분과 대조하는 <code>_gradcheck()</code>를 둔다</li>
+<li>한 파라미터 $\theta_i$를 $\pm\epsilon$ 흔들어 손실 변화로 기울기를 근사한다 (중심 차분):</li>
+</ul>
+
+$$ \frac{\partial \mathcal{L}}{\partial \theta_i} \approx \frac{\mathcal{L}(\theta_i + \epsilon) - \mathcal{L}(\theta_i - \epsilon)}{2\epsilon} $$
+
+<pre><code class="language-python">eps = 1e-5
+for idx in np.ndindex(param.shape):
+    param[idx] += eps;     lp, _ = m.loss_and_grad(X, y)
+    param[idx] -= 2 * eps; ln, _ = m.loss_and_grad(X, y)
+    param[idx] += eps
+    num[idx] = (lp - ln) / (2 * eps)        # 수치 미분
+diff = np.abs(num - grads[name]).max()      # 손미분과의 최대 오차</code></pre>
+
+<ul>
+<li>실제 결과: 손미분과 수치 미분의 최대 절대 오차 <b>$3.2\times10^{-11}$</b> — 부동소수점 한계 수준이라 ⑦–⑫ 유도가 옳음을 보증한다</li>
+<li>autograd를 쓰면 이 검증이 자동이지만, 직접 짠 코드에서는 이렇게 한 번 확인하고 넘어가는 것이 표준이다</li>
+</ul>
+
+<hr>
+
+<h2 id="table">6. 수식 ↔ 코드 대응표</h2>
+
+<table>
+<thead><tr><th>단계</th><th>수식</th><th>numpy</th><th>C</th></tr></thead>
+<tbody>
+<tr><td>①②</td><td>$\mathbf{flat}=[E_{w_1};E_{w_2}]$</td><td><code>E[X].reshape(B,C*D)</code></td><td><a href="c/nlm.c">nlm.c</a> lookup 루프</td></tr>
+<tr><td>③</td><td>$\mathbf{h}=\tanh(W_1^\top\mathbf{flat}+\mathbf{b}_1)$</td><td><code>np.tanh(flat@W1+b1)</code></td><td>이중 for</td></tr>
+<tr><td>④</td><td>$\mathbf{z}=W_2^\top\mathbf{h}+\mathbf{b}_2$</td><td><code>h@W2+b2</code></td><td>이중 for</td></tr>
+<tr><td>⑤</td><td>$\mathbf{p}=\mathrm{softmax}(\mathbf{z})$</td><td><code>softmax(z)</code></td><td>행 단위 max·exp·정규화</td></tr>
+<tr><td>⑥</td><td>$\mathcal{L}=-\frac1B\sum\log p_{y}$</td><td><code>-np.log(p[..,y]).mean()</code></td><td>합/B</td></tr>
+<tr><td>⑦</td><td>$d\mathbf{z}=(\mathbf{p}-\text{onehot})/B$</td><td><code>dz=p.copy(); dz[..,y]-=1; dz/=B</code></td><td>같은 식</td></tr>
+<tr><td>⑧</td><td>$gW_2=\mathbf{h}^\top d\mathbf{z}$, $d\mathbf{h}=d\mathbf{z}W_2^\top$</td><td><code>h.T@dz</code>, <code>dz@W2.T</code></td><td>이중·삼중 for</td></tr>
+<tr><td>⑨</td><td>$d\mathbf{s}=d\mathbf{h}\odot(1-\mathbf{h}^2)$</td><td><code>dh*(1-h*h)</code></td><td>원소별</td></tr>
+<tr><td>⑩</td><td>$gW_1=\mathbf{flat}^\top d\mathbf{s}$</td><td><code>flat.T@dh_pre</code></td><td>이중 for</td></tr>
+<tr><td>⑪⑫</td><td>$gE$ scatter-add</td><td><code>np.add.at(gE,X,de)</code></td><td>인덱스 누적 for</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2 id="patterns">7. 연산 패턴 요약 — 네 가지</h2>
+
+<p>backward에 등장하는 연산은 네 종류뿐이다:</p>
+
+<table>
+<thead><tr><th>Forward</th><th>Backward 패턴</th></tr></thead>
+<tbody>
+<tr><td>선형 $\mathbf{y}=W^\top\mathbf{x}+\mathbf{b}$</td><td>$dW=\mathbf{x}^\top d\mathbf{y}$, $\;d\mathbf{b}=\sum d\mathbf{y}$, $\;d\mathbf{x}=d\mathbf{y}\,W^\top$</td></tr>
+<tr><td>원소별 $\mathbf{y}=f(\mathbf{x})$</td><td>$d\mathbf{x}=d\mathbf{y}\odot f'(\mathbf{x})$</td></tr>
+<tr><td>룩업 $\mathbf{y}=W[\text{idx}]$</td><td>$dW[\text{idx}]\mathrel{+}=d\mathbf{y}$ (나머지 0)</td></tr>
+<tr><td>softmax+CE</td><td>$d\mathbf{z}=(\mathbf{p}-\text{onehot})/B$</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>이 네 가지만 알면 대부분의 MLP·임베딩·RNN·Transformer backward를 손으로 짤 수 있다</li>
+<li>이 NLM은 처음 세 개 + softmax/CE를 쓴다</li>
+</ul>
+
+<hr>
+
+<h2 id="loop">8. 학습 루프</h2>
+
+<p>forward+backward로 gradient를 얻으면, 한 스텝 업데이트는 가장 단순한 <b>경사하강법(SGD)</b>이다 — $\theta \leftarrow \theta - \alpha\, g$:</p>
+
+<pre><code class="language-python"># numpy
+for epoch in range(EPOCHS):
+    loss, grads = model.loss_and_grad(X, y)   # 위 ①~⑫ 전부
+    model.sgd_step(grads, lr)                 # θ -= lr * grad</code></pre>
+
+<pre><code class="language-c">/* C (main.c) */
+for (int ep = 0; ep < EPOCHS; ep++) {
+    double loss = nlm_loss_and_grad(&nlm, &grad, X, y);
+    nlm_sgd_step(&nlm, &grad, LR);
+}</code></pre>
+
+<ul>
+<li>이 데모는 24개 학습 쌍 전부를 매 스텝 한 배치로 본다 (full-batch GD)</li>
+<li>학습률 선택, full-batch와 mini-batch SGD의 차이는 <a href="optimizer.html">optimizer.html</a>에서 다룬다</li>
+</ul>
+
+<hr>
+
+<h2>참고</h2>
+<ul>
+<li>실행 코드: <a href="python/nlm.py">python/nlm.py</a> (numpy), <a href="c/nlm.c">c/nlm.c</a> (순수 C)</li>
+<li>옵티마이저(GD·SGD·학습률): <a href="optimizer.html">optimizer.html</a></li>
+<li>코드 전체 가이드: <a href="GUIDE.md">GUIDE.md</a> · 실험 결과: <a href="report.md">report.md</a></li>
+<li>원 논문: Bengio, Y., Ducharme, R., Vincent, P., &amp; Jauvin, C. (2003). "A Neural Probabilistic Language Model." JMLR, 3, 1137–1155.</li>
+</ul>
+
+</body>
+</html>

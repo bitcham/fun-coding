@@ -1,0 +1,7 @@
+pattern	type	ng_baseline	ng_emphasis	nlm_baseline	nlm_emphasis
+철수는 바나나를 좋아해	novel	0	0	18	12
+철수는 바나나를 싫어해	novel	0	0	0	0
+영희는 바나나를 좋아해	train	1675	677	1669	666
+영희는 바나나를 싫어해	novel	0	0	2	1
+짱구는 바나나를 좋아해	novel	0	0	4	3
+짱구는 바나나를 싫어해	train	1645	6678	1594	6719

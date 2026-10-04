@@ -1,0 +1,5 @@
+model	unique_sentences	in_train	novel	emphasis_count
+ngram baseline b=1	6	10000	0	1645
+ngram emphasis x10 b=1	6	10000	0	9533
+NLM   baseline b=1	731	6724	3276	447
+NLM   emphasis x10 b=1	60	9856	144	9479

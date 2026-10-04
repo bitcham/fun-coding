@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>옵티마이저 — 경사하강법(GD)과 SGD</title>
+
+<!-- KaTeX -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {
+    delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '$',  right: '$',  display: false},
+      {left: '\\[', right: '\\]', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ],
+    ignoredTags: ['script','noscript','style','textarea','pre','code']
+  });"></script>
+<!-- highlight.js -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.highlightAll());</script>
+
+<style>
+  html, body {
+    font-family: 'Pretendard', 'Segoe UI', system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif;
+    line-height: 1.65; color: #d4d8df; background: #16181d; margin: 0; padding: 0;
+  }
+  body { max-width: 860px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1 { font-size: 28px; margin: 0 0 8px; padding-bottom: 12px; border-bottom: 2px solid #4a5060; color: #f0f2f5; }
+  h2 { font-size: 22px; margin-top: 56px; padding-top: 24px; border-top: 1px solid #2e323a; color: #e6e9ee; }
+  h3 { font-size: 17px; margin-top: 32px; color: #e6e9ee; }
+  p, li { font-size: 15px; }
+  a { color: #6fa8dc; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  hr { border: 0; border-top: 1px solid #2e323a; margin: 36px 0; }
+  p code, li code, td code, th code {
+    background: #262a31; padding: 1px 6px; border-radius: 3px;
+    font-family: Consolas, 'Courier New', Menlo, monospace; font-size: 0.92em; color: #d8b87a;
+  }
+  pre { margin: 14px 0; border-radius: 6px; overflow-x: auto; background: #2b313b; border: 1px solid #434b59; }
+  pre code, pre code.hljs { background: transparent !important; }
+  pre code { font-family: Consolas, 'Courier New', Menlo, monospace; font-size: 13px; padding: 14px 16px; display: block; line-height: 1.55; }
+  table { border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { border: 1px solid #2e323a; padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: #21242a; font-weight: 600; }
+  blockquote { background: #1d2025; margin: 14px 0; padding: 8px 16px; color: #aeb3bb; border-radius: 4px; }
+  .katex-display { margin: 14px 0 !important; }
+  .note { background: #1d2025; border: 1px solid #2e323a; padding: 10px 16px; border-radius: 4px; margin: 14px 0; }
+  .toc { background: #1d2025; border: 1px solid #2e323a; border-radius: 6px; padding: 14px 24px; margin: 24px 0; font-size: 14px; }
+  .toc ol { margin: 4px 0; padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<h1>옵티마이저 — 경사하강법(GD)과 SGD</h1>
+
+<ul>
+<li><a href="forward_backward.html">forward_backward.html</a>에서 역전파가 모든 파라미터의 gradient를 구하는 과정을 봤다.</li>
+<li>남은 질문 하나: <b>그 gradient로 파라미터를 어떻게 움직이나?</b></li>
+<li>이 데모는 가장 단순한 답인 <b>경사하강법(gradient descent)</b>을 쓴다 — Adam 없이 한 줄짜리 갱신이다.</li>
+<li>여기서는 그 한 줄이 무엇이고, full-batch와 mini-batch가 어떻게 다른지, 학습률을 어떻게 고르는지 본다.</li>
+</ul>
+
+<nav class="toc">
+  <b>목차</b>
+  <ol>
+    <li><a href="#gd">경사하강법 — 한 줄짜리 갱신</a></li>
+    <li><a href="#batch">full-batch GD vs mini-batch SGD</a></li>
+    <li><a href="#lr">학습률(learning rate) 고르기</a></li>
+    <li><a href="#why">왜 이 데모는 full-batch인가</a></li>
+    <li><a href="#next">다음 단계 — Momentum·RMSProp·Adam</a></li>
+  </ol>
+</nav>
+
+<hr>
+
+<h2 id="gd">1. 경사하강법 — 한 줄짜리 갱신</h2>
+
+<p>gradient $g = \partial\mathcal{L}/\partial\theta$는 "$\theta$를 키우면 손실이 늘어나는 방향"이다. 손실을 줄이려면 <b>그 반대 방향</b>으로 조금 가면 된다. 학습률 $\alpha$만큼:</p>
+
+$$ \theta \;\leftarrow\; \theta - \alpha\, g $$
+
+<p>모든 파라미터($E, W_1, \mathbf{b}_1, W_2, \mathbf{b}_2$)에 같은 규칙을 원소별로 적용한다.</p>
+
+<pre><code class="language-python"># numpy (nlm.py)
+def sgd_step(self, grads, lr):
+    self.E  -= lr * grads["E"]
+    self.W1 -= lr * grads["W1"]
+    self.b1 -= lr * grads["b1"]
+    self.W2 -= lr * grads["W2"]
+    self.b2 -= lr * grads["b2"]</code></pre>
+
+<pre><code class="language-c">/* C (nlm.c) — 같은 규칙, 배열마다 원소별 */
+void nlm_sgd_step(nlm_t *m, const nlm_grad_t *g, double lr) {
+    for (int v = 0; v < VOCAB_SIZE; v++)
+        for (int d = 0; d < EMB_DIM; d++) m->E[v][d] -= lr * g->E[v][d];
+    /* W1, b1, W2, b2 도 동일하게 ... */
+}</code></pre>
+
+<ul>
+<li>모멘텀도, 적응 학습률도, weight decay도 없다 — 순수 경사하강법이다.</li>
+<li>작은 모델·작은 데이터에서는 이것으로 충분하다는 것을 이 데모가 보여준다.</li>
+</ul>
+
+<hr>
+
+<h2 id="batch">2. full-batch GD vs mini-batch SGD</h2>
+
+<p>차이는 <b>"한 번의 갱신에 몇 개의 학습 쌍을 보느냐"</b> 하나뿐이다.</p>
+
+<table>
+<thead><tr><th></th><th>full-batch GD</th><th>mini-batch SGD</th></tr></thead>
+<tbody>
+<tr><td>gradient 계산</td><td>학습 쌍 <b>전체</b>(24개)로</td><td>무작위 <b>부분집합</b>(예: 8개)으로</td></tr>
+<tr><td>한 epoch당 갱신 횟수</td><td>1번</td><td>여러 번 (24÷8 = 3번)</td></tr>
+<tr><td>gradient 성격</td><td>전체 손실의 <b>정확한</b> 기울기</td><td>그 추정값 — <b>노이즈</b> 있음</td></tr>
+<tr><td>경로</td><td>매끄럽게 내려감</td><td>지그재그지만 자주 갱신</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>"S"(stochastic, 확률적)는 매 스텝 데이터를 무작위로 골라 gradient가 <b>흔들린다</b>는 뜻이다.</li>
+<li>그 노이즈가 손해처럼 보이지만, 큰 데이터에서는 오히려 이점이 된다:
+<ul>
+<li>전체를 다 보기 전에 자주 갱신해 <b>실측 시간(wall-clock)이 빠르다</b></li>
+<li>노이즈가 얕은 극소점을 빠져나오게 돕는다</li>
+</ul></li>
+</ul>
+
+<p>이 데모의 학습 루프는 둘 다 지원한다 (<a href="python/nlm.py">nlm.py</a>의 <code>train</code>):</p>
+
+<pre><code class="language-python">for ep in range(epochs):
+    if batch_size is None:                       # full-batch GD
+        loss, grads = model.loss_and_grad(X, y)  # 24쌍 전부
+        model.sgd_step(grads, lr)
+    else:                                        # mini-batch SGD
+        idx = rng.permutation(N)                 # 매 epoch 셔플
+        for s in range(0, N, batch_size):
+            bi = idx[s : s + batch_size]
+            _, grads = model.loss_and_grad(X[bi], y[bi])  # 부분집합
+            model.sgd_step(grads, lr)</code></pre>
+
+<p>두 방식의 수렴 곡선과 실측 시간 비교는 <code>experiments/plot_gd_vs_sgd.py</code> → <code>results/gd_vs_sgd_curves.png</code>, <code>gd_vs_sgd_wallclock.png</code>에 있다.</p>
+
+<hr>
+
+<h2 id="lr">3. 학습률(learning rate) 고르기</h2>
+
+<ul>
+<li>$\alpha$는 한 스텝의 보폭이다.</li>
+<li>너무 작으면 굼뜨고, 너무 크면 골짜기를 건너뛰어 발산한다.</li>
+</ul>
+
+<p>이 데모에서 학습률만 바꿔 2000 epoch 학습한 결과(실험 3, <a href="report.md">report.md</a>):</p>
+
+<table>
+<thead><tr><th>lr</th><th>최종 loss</th><th>비고</th></tr></thead>
+<tbody>
+<tr><td>0.01</td><td>0.6974</td><td>2000 epoch에도 미수렴 (너무 느림)</td></tr>
+<tr><td>0.03</td><td>0.5026</td><td>느림</td></tr>
+<tr><td>0.1</td><td>0.4568</td><td>양호</td></tr>
+<tr><td><b>0.3</b></td><td><b>0.4503</b></td><td><b>균형점 — 이후 실험 기본값</b></td></tr>
+<tr><td>1.0</td><td>0.4486</td><td>약간 더 낮음</td></tr>
+<tr><td>3.0</td><td>0.4486</td><td>큰 lr에서도 발산 안 함</td></tr>
+</tbody>
+</table>
+
+<div class="note">
+<b>왜 lr=3.0인데도 안 터지나?</b> 보통 이렇게 큰 학습률은 발산한다. 여기서 괜찮은 건 <b>모델이 작고 full-batch</b>라 gradient가 노이즈 없이 매끈하고, 손실 표면이 단순하기 때문이다. 큰 모델·mini-batch에서는 이런 큰 학습률은 거의 항상 터진다.
+</div>
+
+<ul>
+<li><b>손실 하한.</b> 최저 loss가 약 <b>0.448</b>에서 멈추는데, 이건 모델이 부족해서가 아니다.</li>
+<li>데이터 자체에 줄일 수 없는 모호성이 있다 — 예컨대 <code>(&lt;bos&gt;)</code> 다음에 철수는·영희는·짱구는 세 인물이 모두 가능하다.</li>
+<li>이 <b>비축약 엔트로피(irreducible entropy)</b>가 $\log(6)/4 \approx 0.448$의 바닥을 만든다 — 어떤 옵티마이저로도 그 아래로는 못 내려간다.</li>
+</ul>
+
+<hr>
+
+<h2 id="why">4. 왜 이 데모는 full-batch인가</h2>
+
+<ul>
+<li>학습 쌍이 <b>24개</b>뿐이다 — 전부 한 번에 보는 비용이 무시할 만하니, 굳이 미니배치로 쪼갤 이유가 없다.</li>
+<li>그래서 C 버전(<a href="c/main.c">main.c</a>)과 Python 기본 실행 모두 full-batch GD를 쓴다 — 매 epoch에 forward 한 번, backward 한 번, 갱신 한 번.</li>
+</ul>
+
+<ul>
+<li>실제 LLM 학습은 정반대다 — 데이터가 수십억 토큰이라 전체 gradient를 한 번 구하는 것조차 불가능하고, 그래서 <b>mini-batch SGD가 필수</b>다.</li>
+<li>이 데모의 full-batch는 "원리를 가장 깨끗하게 보여주는 최소 설정"이다.</li>
+</ul>
+
+<hr>
+
+<h2 id="next">5. 다음 단계 — Momentum·RMSProp·Adam</h2>
+
+<ul>
+<li>순수 SGD의 두 가지 약점:
+<ul>
+<li>(1) 모든 파라미터·모든 축에 같은 학습률을 쓴다</li>
+<li>(2) gradient 노이즈를 그대로 따라간다</li>
+</ul></li>
+<li>실무에서는 이를 보완한 옵티마이저를 쓴다.</li>
+</ul>
+
+<p>이 데모 코드에는 <b>들어있지 않지만</b>, 큰 모델로 갈 때 만나게 될 흐름만 정리해 둔다:</p>
+
+<table>
+<thead><tr><th>옵티마이저</th><th>핵심 아이디어</th></tr></thead>
+<tbody>
+<tr><td><b>SGD</b> (이 데모)</td><td>$\theta \mathrel{-}= \alpha g$. 방향·크기 모두 gradient에 맡김</td></tr>
+<tr><td><b>+ Momentum</b></td><td>최근 gradient의 지수이동평균으로 <b>방향</b>을 매끄럽게 (관성)</td></tr>
+<tr><td><b>RMSProp</b></td><td>축별 gradient 크기로 나눠 <b>스텝 크기</b>를 정규화</td></tr>
+<tr><td><b>Adam</b></td><td>Momentum + RMSProp + 편향 보정. 현대 딥러닝의 기본값</td></tr>
+</tbody>
+</table>
+
+<ul>
+<li>대규모 언어모델 학습에서는 거의 항상 <b>AdamW + warmup + cosine 학습률 스케줄</b> 조합을 쓴다.</li>
+<li>하지만 "왜 그 보완이 필요한가"는 순수 SGD를 먼저 손에 익혀야 보인다 — 그래서 이 최소 예제는 일부러 SGD에서 멈춘다.</li>
+</ul>
+
+<hr>
+
+<h2>참고</h2>
+<ul>
+<li>앞 이야기(역전파가 gradient를 구하는 법): <a href="forward_backward.html">forward_backward.html</a></li>
+<li>실행 코드: <a href="python/nlm.py">python/nlm.py</a>, <a href="c/nlm.c">c/nlm.c</a>, <a href="c/main.c">c/main.c</a></li>
+<li>학습률 실험 데이터: <a href="report.md">report.md</a> 실험 3 · GD vs SGD: <code>results/gd_vs_sgd_*.png</code></li>
+</ul>
+
+</body>
+</html>

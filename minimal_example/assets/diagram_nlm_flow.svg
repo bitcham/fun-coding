@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 700" width="720" height="700">
+  <rect width="720" height="700" fill="#1a1b26"/>
+
+  <!-- ───── X ───── -->
+  <rect x="180" y="20" width="280" height="50" rx="6" fill="#1f2937" stroke="#e0af68" stroke-width="2"/>
+  <text x="220" y="51" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">X</text>
+  <text x="320" y="51" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, 2]</text>
+  <text x="455" y="51" text-anchor="end" fill="#9aa5ce" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="13">단어 ID 두 개</text>
+
+  <line x1="320" y1="70" x2="320" y2="103" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,110 315,100 325,100" fill="#7aa2f7"/>
+  <text x="475" y="93" fill="#7dcfff" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">① 임베딩 lookup</text>
+  <text x="475" y="110" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">e[b][c] = E[X[b][c]]</text>
+
+  <!-- ───── e ───── -->
+  <rect x="180" y="120" width="280" height="50" rx="6" fill="#1f2937" stroke="#7dcfff" stroke-width="2"/>
+  <text x="220" y="151" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">e</text>
+  <text x="320" y="151" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, 2, D]</text>
+  <text x="455" y="151" text-anchor="end" fill="#9aa5ce" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="13">임베딩 벡터</text>
+
+  <line x1="320" y1="170" x2="320" y2="203" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,210 315,200 325,200" fill="#7aa2f7"/>
+  <text x="475" y="193" fill="#7dcfff" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">② flatten</text>
+  <text x="475" y="210" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">e.reshape(B, 2·D)</text>
+
+  <!-- ───── flat ───── -->
+  <rect x="180" y="220" width="280" height="50" rx="6" fill="#1f2937" stroke="#7dcfff" stroke-width="2"/>
+  <text x="220" y="251" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">flat</text>
+  <text x="320" y="251" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, 2·D]</text>
+
+  <line x1="320" y1="270" x2="320" y2="303" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,310 315,300 325,300" fill="#7aa2f7"/>
+  <text x="475" y="290" fill="#7aa2f7" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">③ hidden layer</text>
+  <text x="475" y="308" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">h = tanh(flat @ W1 + b1)</text>
+
+  <!-- ───── h ───── -->
+  <rect x="180" y="320" width="280" height="50" rx="6" fill="#1f2937" stroke="#7aa2f7" stroke-width="2"/>
+  <text x="220" y="351" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">h</text>
+  <text x="320" y="351" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, H]</text>
+  <text x="455" y="351" text-anchor="end" fill="#9aa5ce" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="13">hidden 활성화</text>
+
+  <line x1="320" y1="370" x2="320" y2="403" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,410 315,400 325,400" fill="#7aa2f7"/>
+  <text x="475" y="390" fill="#9ece6a" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">④ output layer</text>
+  <text x="475" y="408" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">z = h @ W2 + b2</text>
+
+  <!-- ───── z ───── -->
+  <rect x="180" y="420" width="280" height="50" rx="6" fill="#1f2937" stroke="#9ece6a" stroke-width="2"/>
+  <text x="220" y="451" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">z</text>
+  <text x="320" y="451" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, V]</text>
+  <text x="455" y="451" text-anchor="end" fill="#9aa5ce" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="13">logits</text>
+
+  <line x1="320" y1="470" x2="320" y2="503" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,510 315,500 325,500" fill="#7aa2f7"/>
+  <text x="475" y="490" fill="#9ece6a" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">⑤ softmax</text>
+  <text x="475" y="508" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">p = softmax(z)</text>
+
+  <!-- ───── p ───── -->
+  <rect x="180" y="520" width="280" height="50" rx="6" fill="#1f2937" stroke="#9ece6a" stroke-width="2"/>
+  <text x="220" y="551" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">p</text>
+  <text x="320" y="551" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">[B, V]</text>
+  <text x="455" y="551" text-anchor="end" fill="#9aa5ce" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="13">확률 분포</text>
+
+  <line x1="320" y1="570" x2="320" y2="603" stroke="#7aa2f7" stroke-width="2"/>
+  <polygon points="320,610 315,600 325,600" fill="#7aa2f7"/>
+  <text x="475" y="590" fill="#f7768e" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans CJK KR',sans-serif" font-size="14" font-weight="600">⑥ cross-entropy</text>
+  <text x="475" y="608" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="12">−mean(log p[정답])</text>
+
+  <!-- ───── loss ───── -->
+  <rect x="240" y="620" width="160" height="50" rx="6" fill="#1f2937" stroke="#f7768e" stroke-width="2"/>
+  <text x="280" y="651" fill="#c0caf5" font-family="'Consolas','Courier New',monospace" font-size="16" font-weight="700">loss</text>
+  <text x="380" y="651" text-anchor="end" fill="#9aa5ce" font-family="'Consolas','Courier New',monospace" font-size="14">scalar</text>
+</svg>
