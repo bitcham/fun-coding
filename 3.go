@@ -7,12 +7,6 @@ import (
 	"net/http"
 )
 
-// Book represents the API response (only fields we need)
-type Book struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-}
-
 func GetBookTitle(id int) (string, error) {
 	// TODO: Implement this function
 	// 1. Build the URL: http://bookstore-api/books/{id}
